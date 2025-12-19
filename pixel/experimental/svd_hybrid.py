@@ -116,7 +116,11 @@ class SVDHybridCompressor:
     ) -> dict[str, dict]:
         results = {}
         for name, weight in weights.items():
-            results[name] = self.compress(weight)
+            try:
+                results[name] = self.compress(weight.float())
+            except Exception as e:
+                print(f"  Skipping {name}: {e}")
+                continue
         return results
 
     def decompress_model_weights(
