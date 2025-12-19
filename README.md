@@ -16,7 +16,7 @@ PIXEL compresses neural network weights by storing common patterns instead of fu
 ## Installation
 
 ```bash
-git clone https://github.com/pixel-compress/pixel.git
+git clone https://github.com/ageborn-dev/pixel.git
 cd pixel
 pip install -e .
 ```
@@ -225,6 +225,6 @@ If you use PIXEL in your research, please cite:
 @software{pixel2025,
   title={PIXEL: Pattern-Indexed eXtreme Efficient LLM},
   year={2025},
-  url={https://github.com/pixel-compress/pixel}
+  url={https://github.com/ageborn-dev/pixel.git}
 }
 ```
