@@ -6,6 +6,7 @@ from pixel.core.synthesis import WeightSynthesizer
 from pixel.core.compression import PIXELCompressor
 from pixel.core.adaptive import AdaptiveCompressor
 from pixel.core.calibrated import CalibratedCompressor
+from pixel.core.gptq_style import GPTQStyleCompressor
 
 __all__ = [
     "PIXELConfig",
@@ -16,4 +17,5 @@ __all__ = [
     "PIXELCompressor",
     "AdaptiveCompressor",
     "CalibratedCompressor",
+    "GPTQStyleCompressor",
 ]

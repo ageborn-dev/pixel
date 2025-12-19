@@ -1,17 +1,25 @@
-# PIXEL: Pattern-Indexed eXtreme Efficient LLM
+# PIXEL: Pattern-Indexed eXtreme Efficient LLM Compression
 
-A novel approach to neural network weight compression using pattern-based storage and dynamic weight synthesis.
+> ⚠️ **Experimental Research Project** - This is a research exploration into pattern-based LLM compression. For production use, consider established methods like [GPTQ](https://github.com/IST-DASLab/gptq) or [AWQ](https://github.com/mit-han-lab/llm-awq).
 
 ## Overview
 
-PIXEL compresses neural network weights by storing common patterns instead of full weight matrices. During inference, weights are reconstructed on-demand from pattern combinations, dramatically reducing model size while maintaining accuracy.
+PIXEL explores novel approaches to LLM weight compression through pattern discovery, SVD decomposition, and quantization. This project documents our research journey and findings.
 
-### Key Features
+## Key Findings
 
-- **Pattern-based compression** - Store patterns + scales instead of full matrices
-- **SVD+Pattern hybrid** - Combine low-rank SVD with pattern matching for better compression
-- **Drop-in replacement** - Convert `nn.Linear` layers to compressed `PIXELLinear`
-- **PyTorch native** - Built on PyTorch with GPU acceleration support
+### What We Learned
+
+| Approach | Compression | Perplexity Increase | Verdict |
+|----------|-------------|---------------------|---------|
+| SVD-only | ~4x | +2,500% | ❌ Unusable |
+| Pattern matching | ~1x | +77% | ❌ No compression |
+| Calibrated SVD | ~5x | +250,000% | ❌ Worse |
+| **GPTQ-style quantization** | **7.87x** | **+38%** | ✅ Best result |
+
+### Key Insight
+
+> Pure SVD/pattern compression destroys model quality. Error compensation (like GPTQ uses) is essential for maintaining quality during compression.
 
 ## Installation
 
@@ -21,210 +29,133 @@ cd pixel
 pip install -e .
 ```
 
-For development:
-```bash
-pip install -e ".[dev]"
-```
+**Requirements:**
+- Python 3.10+
+- PyTorch 2.0+
+- transformers (for benchmarks)
 
 ## Quick Start
 
-### Basic Compression
+### GPTQ-Style Compression (Best Results)
 
 ```python
-import torch
-from pixel import PIXELConfig, PIXELCompressor
+from pixel.core import GPTQStyleCompressor
+from transformers import GPT2LMHeadModel
 
-compressor = PIXELCompressor()
+model = GPT2LMHeadModel.from_pretrained("gpt2")
+compressor = GPTQStyleCompressor(bits=4)
 
-weights = {
-    "layer1.weight": torch.randn(256, 256),
-    "layer2.weight": torch.randn(256, 256),
-}
+# Compress all layers
+compressed = compressor.compress_model_sequential(model)
 
-result = compressor.compress(weights)
-print(f"Compression: {result.compression_ratio:.2f}x")
-print(f"Error: {result.reconstruction_error:.4f}")
-
-reconstructed = compressor.decompress(result.pattern_refs)
+# Apply compressed weights
+model = compressor.apply_compressed_weights(model, compressed)
 ```
 
-### Replace Linear Layers
+### Pattern Analysis (Experimental)
 
 ```python
-import torch.nn as nn
-from pixel import PatternDictionary
-from pixel.nn.layers import replace_linear_layers
+from pixel import PIXELCompressor, PIXELConfig
 
-model = nn.Sequential(
-    nn.Linear(128, 256),
-    nn.ReLU(),
-    nn.Linear(256, 64),
-)
-
-pattern_dict = PatternDictionary(max_patterns=100)
-pattern_dict.generate_base_patterns(128)
-pattern_dict.generate_base_patterns(256)
-
-errors = replace_linear_layers(model, pattern_dict)
-```
-
-### SVD + Pattern Hybrid
-
-```python
-from pixel.experimental import SVDHybridCompressor
-
-compressor = SVDHybridCompressor(
-    svd_energy_threshold=0.85,
-    pattern_error_threshold=0.05,
-)
-
-weight = torch.randn(512, 512)
-result = compressor.compress(weight)
-
-print(f"SVD rank: {result['svd_rank']}")
-print(f"Patterns: {result['num_patterns']}")
-print(f"Ratio: {result['compression_ratio']:.2f}x")
-```
-
-## Architecture
-
-```
-Weight Matrix
-     │
-     ▼
-┌─────────────────┐
-│  SVD Decompose  │  (optional, for global structure)
-│   W ≈ U·Σ·V^T   │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Pattern Match   │  Find similar patterns in dictionary
-│  residual → Σ   │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Scale Optimize  │  Least-squares for optimal scales
-│   argmin ||W -  │
-│   Σ(Pi·si)||²   │
-└────────┬────────┘
-         │
-         ▼
-  Compressed Form:
-  (U, Σ, V) + [(p₁,s₁), (p₂,s₂), ...] + residual
-```
-
-## API Reference
-
-### PIXELConfig
-
-```python
-from pixel import PIXELConfig
-
-config = PIXELConfig(
-    matrix_size=256,
-    hidden_size=768,
-    num_layers=12,
-)
-
-config = PIXELConfig.for_small_model()
-config = PIXELConfig.for_large_model()
-```
-
-### PIXELCompressor
-
-```python
-from pixel import PIXELCompressor
-
+config = PIXELConfig()
 compressor = PIXELCompressor(config)
-result = compressor.compress(weight_dict)
-weights = compressor.decompress(pattern_refs)
-compressor.save("model.pt")
-compressor = PIXELCompressor.load("model.pt")
-```
 
-### PatternDictionary
-
-```python
-from pixel import PatternDictionary
-
-pattern_dict = PatternDictionary(max_patterns=1024, cache_size=256)
-pattern_dict.generate_base_patterns(size=64)
-pid = pattern_dict.add(pattern_tensor)
-pattern = pattern_dict.get(pid)
-matches = pattern_dict.find_best_matches(target, top_k=5)
+# Analyze weight patterns
+result = compressor.compress(model_weights)
+print(f"Patterns discovered: {len(compressor.pattern_dict)}")
 ```
 
 ## Benchmarks
 
-Run benchmarks:
+Run the benchmarks to reproduce our findings:
 
 ```bash
-python benchmarks/memory_benchmark.py
-python benchmarks/accuracy_benchmark.py
-```
+# GPTQ-style compression (best results)
+python benchmarks/gptq_style_benchmark.py
 
-## Running Tests
+# Original pattern-based approach
+python benchmarks/llm_benchmark.py
 
-```bash
-pip install pytest
-pytest tests/ -v
+# Perplexity comparison
+python benchmarks/perplexity_benchmark.py
 ```
 
 ## Project Structure
 
 ```
 pixel/
-├── pixel/
-│   ├── core/           # Core compression logic
-│   │   ├── config.py
-│   │   ├── patterns.py
-│   │   ├── synthesis.py
-│   │   └── compression.py
-│   ├── nn/             # Neural network layers
-│   │   ├── layers.py
-│   │   └── attention.py
-│   ├── utils/          # Utilities
-│   └── experimental/   # Experimental features
-├── tests/
-├── examples/
-├── benchmarks/
-└── docs/
+├── core/
+│   ├── config.py         # Configuration classes
+│   ├── patterns.py       # Pattern dictionary
+│   ├── synthesis.py      # Weight synthesis
+│   ├── compression.py    # Main compressor
+│   ├── adaptive.py       # Adaptive compression with presets
+│   ├── calibrated.py     # Calibration-based compression
+│   └── gptq_style.py     # GPTQ-style with error compensation
+├── nn/
+│   ├── layers.py         # PIXEL layers
+│   └── attention.py      # Pattern attention
+├── experimental/
+│   └── svd_hybrid.py     # SVD + pattern hybrid
+└── utils/
+    ├── math_ops.py       # Math utilities
+    ├── memory.py         # Memory tracking
+    └── io.py             # I/O utilities
 ```
 
-## How It Works
+## Compression Methods
 
-1. **Pattern Discovery**: Identify recurring patterns in weight matrices
-2. **Pattern Dictionary**: Store unique patterns with usage tracking
-3. **Weight Decomposition**: Express weights as pattern combinations
-4. **Dynamic Synthesis**: Reconstruct weights on-demand during inference
+### 1. GPTQStyleCompressor (Recommended)
+- 4-bit quantization with error compensation
+- Column-wise quantization
+- Best quality/compression trade-off
+- **7.87x compression, 38% perplexity increase**
 
-### Memory Targets
+### 2. AdaptiveCompressor
+- SVD-based with per-layer tuning
+- Three presets: `high_quality`, `balanced`, `max_compression`
+- Good compression ratio but high perplexity increase
 
-| Component | Target Size |
-|-----------|-------------|
-| Pattern Dictionary | ~100MB |
-| Synthesis Network | ~50MB |
-| Runtime Cache | ~200MB |
-| **Total** | **~350MB** |
+### 3. PIXELCompressor (Original)
+- Pattern-based weight representation
+- Interesting for analysis, not practical for compression
+- Pattern discovery and dictionary building
+
+## Research Directions
+
+This project explored several ideas:
+
+1. **Pattern-based compression** - Store weights as patterns + scales
+2. **SVD decomposition** - Low-rank approximation of weight matrices
+3. **Calibration-based importance** - Use activation data to identify critical weights
+4. **Error compensation** - GPTQ's key innovation that makes quantization work
+
+### Why Pure SVD/Patterns Don't Work
+
+- Even 99% SVD energy retention causes significant perplexity increase
+- LLM weights are sensitive - small errors compound catastrophically
+- Without error compensation, quality degrades rapidly
+
+### What Works
+
+- **Quantization + error compensation** (GPTQ/AWQ approach)
+- Adjusting subsequent weights to compensate for quantization error
+- Using calibration data to guide compression decisions
 
 ## Contributing
 
-Contributions welcome! Please read our contributing guidelines and submit pull requests.
+This is a research project open to exploration. Ideas welcome:
+
+1. Better pattern discovery algorithms
+2. Combining patterns with quantization
+3. Per-layer adaptive compression
+4. Fine-tuning after compression
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+MIT License
 
-## Citation
+## Acknowledgments
 
-If you use PIXEL in your research, please cite:
-
-```bibtex
-@software{pixel2025,
-  title={PIXEL: Pattern-Indexed eXtreme Efficient LLM},
-  year={2025},
-  url={https://github.com/ageborn-dev/pixel.git}
-}
-```
+- Inspired by GPTQ, AWQ, and other LLM compression research
+- Built with PyTorch
